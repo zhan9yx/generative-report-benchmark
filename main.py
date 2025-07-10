@@ -9,16 +9,18 @@ from src.runner import EvaluationRunner
 from src.metrics.bertscore import BERTScoreWrapper
 from src.metrics.summac import SummaCWrapper
 from src.metrics.bleurt import BLEURTWrapper
-
+from src.metrics.bleu import BleuWrapper
+from src.metrics.rouge import RougeWrapper
+from src.metrics.meteor import MeteorWrapper
 
 warnings.filterwarnings("ignore", category=UserWarning, module='torch.utils.data')
 
 
 def load_data_from_files(data_dir: str = 'data') -> pd.DataFrame:
     """
-    從指定的資料夾結構中讀取原始文本和多個劣化文本。
+    从data文件夹中读取原始文本和劣化文本。
 
-    預期的文件結構:
+    结构:
     data/
     ├── original.txt
     └── degraded/
@@ -27,30 +29,27 @@ def load_data_from_files(data_dir: str = 'data') -> pd.DataFrame:
         └── ... (其他劣化文本)
 
     Args:
-        data_dir (str): 包含 `original.txt` 和 `degraded/` 子目錄的根目錄。
+        data_dir (str): 包含 `original.txt` 和 `degraded/` 子目录的根目录。
 
     Returns:
-        pd.DataFrame: 一個包含 `original_text`, `degraded_text`, `degradation_type` 的 DataFrame。
+        pd.DataFrame: 包含 `original_text`, `degraded_text`, `degradation_type` 的 DataFrame。
     """
-    print(f"正在從 '{data_dir}' 目錄載入文件...")
+    print(f"读取文本： '{data_dir}' ")
     records = []
     original_file_path = os.path.join(data_dir, 'original.txt')
     degraded_dir_path = os.path.join(data_dir, 'degraded')
 
     try:
-        # 讀取唯一的源文本
         with open(original_file_path, 'r', encoding='utf-8') as f:
             original_content = f.read()
 
-        # **** 核心改動 1: 添加源文本自身的評估 ****
-        # 將源文本與自身比較，作為評估的基準線 (baseline)
         records.append({
             'original_text': original_content,
             'degraded_text': original_content,
             'degradation_type': 'Original (Self-comparison)'
         })
 
-        # 讀取所有劣化文本
+        # 读取劣化文本
         if os.path.isdir(degraded_dir_path):
             for filename in os.listdir(degraded_dir_path):
                 if filename.endswith('.txt'):
@@ -65,12 +64,11 @@ def load_data_from_files(data_dir: str = 'data') -> pd.DataFrame:
                         'degradation_type': degradation_type
                     })
 
-        if len(records) <= 1:  # 只有源文本自己
-            print(f"警告: 在 '{degraded_dir_path}' 中沒有找到任何 .txt 格式的劣化文本。")
+        if len(records) <= 1:  #
+            print(f"警告: 在 '{degraded_dir_path}' 中没有找到txt格式的劣化文本。")
 
     except FileNotFoundError:
-        print(f"錯誤: 找不到 '{original_file_path}'。請確保文件存在並路徑正確。")
-        # 創建一個空的 DataFrame 返回，以避免後續崩潰
+        print(f"错误: 找不到 '{original_file_path}'。")
         return pd.DataFrame(columns=['original_text', 'degraded_text', 'degradation_type'])
 
     return pd.DataFrame(records)
@@ -78,31 +76,35 @@ def load_data_from_files(data_dir: str = 'data') -> pd.DataFrame:
 
 if __name__ == "__main__":
     # ===================================================================
-    # 1. 實例化並註冊您想要運行的評估指標
+    # 1. 实例化评估指标
     # ===================================================================
-    print("正在初始化評估指標...")
+    print("正在初始化评估指标")
 
-    bertscore_metric = BERTScoreWrapper(device='cuda')
-    summac_metric = SummaCWrapper(device='cuda')
-    bleurt_metric = BLEURTWrapper(device='cuda')
+    # bertscore_metric = BERTScoreWrapper(device='cuda')
+    # summac_metric = SummaCWrapper(device='cuda')
+    # bleurt_metric = BLEURTWrapper(device='cuda')
+    bleu_metric = BleuWrapper()
+    rouge_metric = RougeWrapper()
+    meteor_metric = MeteorWrapper()
 
     metrics_to_run = [
-        bertscore_metric,
-        summac_metric,
-        bleurt_metric,
+        # bertscore_metric,
+        # summac_metric,
+        # bleurt_metric,
+        bleu_metric,
+        rouge_metric,
+        meteor_metric
     ]
 
     # ===================================================================
-    # 2. 初始化並運行評估器
+    # 2. 初始化冰进行评估
     # ===================================================================
     runner = EvaluationRunner(metrics=metrics_to_run)
 
-    # **** 核心改動 2: 從文件載入資料 ****
-    # 從 `data` 目錄載入，而不是使用硬編碼的範例
+    # 载入数据
     sample_data = load_data_from_files()
 
     if not sample_data.empty:
-        # 執行評估流程
         results_df = runner.run(
             data=sample_data,
             original_col='original_text',
@@ -110,12 +112,12 @@ if __name__ == "__main__":
         )
 
         # ===================================================================
-        # 3. 顯示並保存結果
+        # 3. 保存结果
         # ===================================================================
         print("\n" + "=" * 20 + " 最終評估結果 " + "=" * 20)
         pd.set_option('display.max_columns', None)
         pd.set_option('display.width', 200)
-        # 根據劣化類型排序，讓源文本的結果顯示在第一行
+        # 排序
         results_df = results_df.sort_values(by='degradation_type')
         print(results_df)
         print("=" * 55)
@@ -123,4 +125,4 @@ if __name__ == "__main__":
         output_file_path = 'results/evaluation_scores.csv'
         runner.save_results(results_df, output_file_path)
     else:
-        print("資料為空，已跳過評估流程。")
+        print("数据为空。")
